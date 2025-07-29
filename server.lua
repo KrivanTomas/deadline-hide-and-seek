@@ -21,7 +21,7 @@ local player_count = 0
 local alive_players = {}
 local hunters = {} -- attackers
 local prey = {} -- defenders
-local game_id = 0 -- incrementing id for disabling invalid delays
+local delay_lock = 0 -- incrementing number for disabling invalid delays
 
 -- functions ------------------------------------------
 function setup_server()
@@ -147,12 +147,17 @@ function start_game()
         player.fire_client("game_stage_update", "HIDE")
         player.fire_client("sync_clock", sconfig.hide_interval)
     end
+    delay_lock += 1
+    local hide_delay_lock = delay_lock
     time.delay(math.max(sconfig.hide_interval - sconfig.pre_seek_interval, 0), function()
+        if delay_lock ~= hide_delay_lock then return end
         map.set_time(sconfig.env_seek_time)
         map.set_preset(sconfig.env_seek_lighting)
         map.kill_map_lights()
     end)
     time.delay(sconfig.hide_interval, function()
+        if delay_lock ~= hide_delay_lock then return end
+        
         spawn_hunters()
         sync_clients()
         for name, id in all_players do
@@ -160,12 +165,12 @@ function start_game()
             player.fire_client("game_stage_update", "SEEK")
             player.fire_client("sync_clock", sconfig.seek_interval)
         end
-        local past_game_id = game_id
+        delay_lock += 1
+        local seek_delay_lock = delay_lock
         time.delay(sconfig.seek_interval, function()
-            if game_id == past_game_id then
-                chat.send_ingame_notification("PREY WINS")
-                end_game()
-            end
+            if delay_lock ~= seek_delay_lock then return end
+            chat.send_ingame_notification("PREY WINS")
+            end_game()
         end)
     end)
 end
@@ -202,7 +207,6 @@ function check_win_conditions()
 end
 
 function end_game()
-    game_id += 1
     chat.set_spawning_disabled_reason("The game has not started yet")
     map.set_time(sconfig.env_start_time)
     map.set_preset(sconfig.env_start_lighting)
@@ -212,8 +216,11 @@ function end_game()
         player.fire_client("game_stage_update", "GAME END")
         player.fire_client("sync_clock", sconfig.end_game_interval)
     end
-
+    
+    delay_lock += 1
+    local end_game_delay_lock = delay_lock
     time.delay(sconfig.end_game_interval, function()
+        if delay_lock ~= end_game_delay_lock then return end
         hunters = {}
         prey = {}
         alive_players = {}
@@ -228,7 +235,7 @@ function end_game()
 end
 
 function force_end_game()
-    game_id += 1
+    delay_lock += 1
     chat.set_spawning_disabled_reason("The game has not started yet")
     map.set_time(sconfig.env_start_time)
     map.set_preset(sconfig.env_start_lighting)
